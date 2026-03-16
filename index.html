@@ -134,7 +134,7 @@ td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle;
 td.col-date,td.col-coin{text-align:left;}
 td.col-note{text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;min-width:80px;}
 td.col-note.has-note{white-space:pre-wrap;overflow:visible;}
-th.col-del,td.col-del{width:50px;min-width:50px;text-align:center;}
+th.col-del,td.col-del{width:80px;min-width:80px;text-align:center;}
 tr:last-child td{border-bottom:none;}
 tr:hover td{background:rgba(79,147,248,.03);}
 
@@ -418,8 +418,8 @@ textarea.inline-input{resize:none;line-height:1.5;min-height:32px;}
 <!-- ══ MODAL ══ -->
 <div class="ov" id="ov">
   <div class="modal">
-    <div class="modal-title">+ Thêm lệnh mới</div>
-    <div class="modal-sub">Chỉ cần điền những ô có dấu ✱ — các ô khác để trống được</div>
+    <div class="modal-title" id="modal-title">+ Thêm lệnh mới</div>
+    <div class="modal-sub" id="modal-sub">Chỉ cần điền những ô có dấu ✱ — các ô khác để trống được</div>
 
     <div class="fg" style="grid-template-columns:1fr 1fr 1fr">
       <div class="f"><label>Ngày vào ✱</label><input type="date" id="md"></div>
@@ -466,7 +466,7 @@ textarea.inline-input{resize:none;line-height:1.5;min-height:32px;}
 
     <div class="modal-footer">
       <button class="btn bgh" onclick="closeModal()">Huỷ</button>
-      <button class="btn bg" onclick="saveOrder()">Lưu lệnh</button>
+      <button class="btn bg" id="modal-save-btn" onclick="saveOrder()">Lưu lệnh</button>
     </div>
   </div>
 </div>
@@ -628,13 +628,40 @@ function calc(){
 calc();
 
 // ── MODAL ────────────────────────────────────────────────────
+let editingId = null;
 function openModal(){
+  editingId = null;
+  $('modal-title').textContent = '+ Thêm lệnh mới';
+  $('modal-sub').textContent = 'Chỉ cần điền những ô có dấu ✱ — các ô khác để trống được';
+  $('modal-save-btn').textContent = 'Lưu lệnh';
   $('md').value=new Date().toISOString().split('T')[0];
   ['mc','me','mx','mm','mtp','msl','mn'].forEach(id=>$(id).value='');
+  $('mdir').value='LONG'; $('mlev').value='5';
   $('mprev').style.display='none';
   $('ov').classList.add('on');
 }
-function closeModal(){$('ov').classList.remove('on');}
+function editOrder(id){
+  const o = orders.find(o=>o.id===id);
+  if(!o) return;
+  editingId = id;
+  $('modal-title').textContent = '✏️ Sửa lệnh';
+  $('modal-sub').textContent = 'Chỉnh sửa thông tin lệnh — bấm Lưu để cập nhật';
+  $('modal-save-btn').textContent = 'Cập nhật';
+  $('md').value = o.date;
+  $('mc').value = o.coin;
+  $('mdir').value = o.dir;
+  $('me').value = fmtNum(o.e);
+  $('mx').value = o.x ? fmtNum(o.x) : '';
+  $('mm').value = fmtNum(o.m);
+  $('mlev').value = o.lev;
+  $('mtp').value = o.tp ? fmtNum(o.tp) : '';
+  $('msl').value = o.sl ? fmtNum(o.sl) : '';
+  $('mn').value = o.note || '';
+  $('mprev').style.display='none';
+  preview();
+  $('ov').classList.add('on');
+}
+function closeModal(){editingId=null;$('ov').classList.remove('on');}
 function preview(){
   const e=parseNum($('me').value),x=parseNum($('mx').value),m=parseNum($('mm').value),
         lev=parseFloat($('mlev').value)||1,d=$('mdir').value;
@@ -651,8 +678,21 @@ function saveOrder(){
   if(!date||!coin||!e||!m){toast('Cần điền: Ngày, Coin, Giá vào, Margin','err');return;}
   let pnl=null,pct=null,res='CHỜ';
   if(x){pct=dir==='SHORT'?(e-x)/e:(x-e)/e;pnl=pct*m*lev;res=pnl>0?'THẮNG':pnl<0?'THUA':'HÒA';}
-  orders.unshift({id:Date.now(),date,coin,dir,e,x,m,lev,tp:parseNum($('mtp').value)||null,sl:parseNum($('msl').value)||null,note,pnl,pct,res});
-  persist();closeModal();renderLog();toast('✅ Đã lưu lệnh!');
+
+  if(editingId!==null){
+    // Edit mode: update existing order
+    const idx=orders.findIndex(o=>o.id===editingId);
+    if(idx===-1){toast('Không tìm thấy lệnh!','err');return;}
+    const old=orders[idx];
+    orders[idx]={...old,date,coin,dir,e,x,m,lev,
+      tp:parseNum($('mtp').value)||null,sl:parseNum($('msl').value)||null,
+      note:note||null,pnl,pct,res};
+    persist();closeModal();renderLog();toast('✅ Đã cập nhật lệnh!');
+  } else {
+    // Add mode
+    orders.unshift({id:Date.now(),date,coin,dir,e,x,m,lev,tp:parseNum($('mtp').value)||null,sl:parseNum($('msl').value)||null,note,pnl,pct,res});
+    persist();closeModal();renderLog();toast('✅ Đã lưu lệnh!');
+  }
 }
 
 // ── JSONBIN CONFIG ────────────────────────────────────────────
@@ -1008,7 +1048,10 @@ function renderLog(){
         <td style="text-align:center">${feeTHtml}</td>
         <td>${resBadge}</td>
         <td class="col-note${o.note?' has-note':''}">${noteCell}</td>
-        <td class="col-del"><button class="del" onclick="delOrder(${o.id})" title="Xoá">🗑</button></td>
+        <td class="col-del">
+          <button class="del" onclick="editOrder(${o.id})" title="Sửa" style="color:var(--blue);font-size:14px">✏️</button>
+          <button class="del" onclick="delOrder(${o.id})" title="Xoá">🗑</button>
+        </td>
       </tr>`;
     });
   });
